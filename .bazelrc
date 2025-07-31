@@ -56,6 +56,8 @@ build:ktfop --define=build_with_ktfop=true
 build:ktfop --define=build_with_kblas=true
 build:ktfop -c opt
 
+build:fused_embedding --define=build_with_fused_embedding=true
+
 # Processor native optimizations (depends on build host capabilities).
 build:nativeopt --copt=-march=native
 build:nativeopt --host_copt=-march=native
