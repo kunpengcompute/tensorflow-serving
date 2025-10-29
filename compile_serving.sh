@@ -5,7 +5,9 @@ TENSORFLOW_DIR=""
 ENABLE_GCC12=false
 ENABLE_KTFOP=false
 ENABLE_ANNC=false
+ENABLE_KDNN=false
 KTFOP_OPTIONS=""
+KDNN_OPTIONS=""
 
 usage() {
     echo "Usage: $0 --tensorflow_dir <path> [--features <feature1,feature2>]"
@@ -27,9 +29,18 @@ while [[ "$#" -gt 0 ]]; do
             IFS=',' read -ra features_array <<< "$2"
             for feature in "${features_array[@]}"; do
                 case "$feature" in
-                    "gcc12") ENABLE_GCC12=true ;;
-                    "ktfop") ENABLE_KTFOP=true ;;
-                    "annc") ENABLE_ANNC=true ;;
+                    "gcc12")
+                        ENABLE_GCC12=true
+                        ;;
+                    "ktfop") 
+                        ENABLE_KTFOP=true
+                        ;;
+                    "annc")
+                        ENABLE_ANNC=true
+                        ;;
+                    "kdnn")
+                        ENABLE_KDNN=true
+                        ;;
                     *) 
                         echo "Warning: Unknown feature '$feature', ignoring"
                         ;;
@@ -71,25 +82,6 @@ fi
 
 bazel version
 
-FEATURES=$3
-IFS=',' read -ra features_array <<< "$FEATURES"
-for feature in "${features_array[@]}"; do
-    case "$feature" in
-        "gcc12")
-            ENABLE_GCC12=true
-            ;;
-        "ktfop")
-            ENABLE_KTFOP=true
-            ;;
-        "annc")
-            ENABLE_ANNC=true
-            ;;
-        *)
-            echo "未识别的特性: $feature"
-            ;;
-    esac
-done
-
 if [ "$ENABLE_GCC12" == true ]; then
     PATH=/opt/openEuler/gcc-toolset-12/root/usr/bin/:$PATH
     LD_LIBRARY_PATH=/opt/openEuler/gcc-toolset-12/root/usr/lib64
@@ -108,6 +100,10 @@ if [ "$ENABLE_ANNC" == true ]; then
     ANNC_OPTIONS="--config=fused_embedding --define tflite_with_xnnpack=false"
 fi
 
+if [ "$ENABLE_KDNN" == true ]; then
+    KDNN_OPTIONS="--define enable_kdnn=true"
+fi
+
 gcc --version
 cd $TF_SERVING_COMPILE_ROOT && \
 PATH=$PATH \
@@ -117,5 +113,6 @@ bazel --output_user_root=$BAZEL_COMPILE_CACHE build -c opt --distdir=$DIST_DIR \
 --copt=-march=armv8.3-a+crc --copt=-O3 --copt=-fprefetch-loop-arrays \
 --copt=-Wno-error=maybe-uninitialized --copt=-Werror=stringop-overflow=0 \
 $KTFOP_OPTIONS \
+$KDNN_OPTIONS \
 $ANNC_OPTIONS \
 tensorflow_serving/model_servers:tensorflow_model_server
