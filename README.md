@@ -37,12 +37,21 @@
 **安装方式<a name="section14505103219363"></a>**
 
 1、拉取代码
-
+1) 开源tensorflow-serving代码
 ```
-git clone -b {serving_tag} https://gitcode.com/boostkit/tensorflow-serving.git 
+git clone -b 2.15.1 https://github.com/tensorflow/serving.git open-serving
+```
+2) 搜推广优化patch
+```
+git clone -b master https://gitcode.com/boostkit/tensorflow-serving.git sra-serving
 ```
 
-其中，serving\_tag需要替换为release版本的tag点。
+3) 将patch打到开源serving代码仓
+```
+cp sra-serving/0001-boostsra-tensorflow-serving.patch open-serving
+cd open-serving
+patch -p1 < 0001-boostsra-tensorflow-serving.patch 
+```
 
 2、环境准备
 

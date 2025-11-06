@@ -1,0 +1,451 @@
+diff --git a/.bazelrc b/.bazelrc
+index b0c8fb5..a373e34 100644
+--- a/.bazelrc
++++ b/.bazelrc
+@@ -52,6 +52,12 @@ build:mkl_aarch64 --copt=-O3
+ build --define=build_with_onednn_v2=true
+ build --define=xnn_enable_avxvnni=false
+ 
++build:ktfop --define=build_with_ktfop=true
++build:ktfop --define=build_with_kblas=true
++build:ktfop -c opt
++
++build:fused_embedding --define=build_with_fused_embedding=true
++
+ # Processor native optimizations (depends on build host capabilities).
+ build:nativeopt --copt=-march=native
+ build:nativeopt --host_copt=-march=native
+diff --git a/.gitignore b/.gitignore
+index fd22d60..1b49de1 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -9,6 +9,8 @@ node_modules
+ /bazel-testlogs
+ /bazel-tf
+ /bazel-workspace
++/download
++/output
+ /third_party/py/numpy/numpy_include
+ /util/python/python_include
+ /util/python/python_lib
+diff --git a/README.en.md b/README.en.md
+new file mode 100644
+index 0000000..7f1aa5a
+--- /dev/null
++++ b/README.en.md
+@@ -0,0 +1,36 @@
++# tensorflow-serving
++
++#### Description
++{**When you're done, you can delete the content in this README and update the file with details for others getting started with your repository**}
++
++#### Software Architecture
++Software architecture description
++
++#### Installation
++
++1.  xxxx
++2.  xxxx
++3.  xxxx
++
++#### Instructions
++
++1.  xxxx
++2.  xxxx
++3.  xxxx
++
++#### Contribution
++
++1.  Fork the repository
++2.  Create Feat_xxx branch
++3.  Commit your code
++4.  Create Pull Request
++
++
++#### Gitee Feature
++
++1.  You can use Readme\_XXX.md to support different languages, such as Readme\_en.md, Readme\_zh.md
++2.  Gitee blog [blog.gitee.com](https://blog.gitee.com)
++3.  Explore open source project [https://gitee.com/explore](https://gitee.com/explore)
++4.  The most valuable open source project [GVP](https://gitee.com/gvp)
++5.  The manual of Gitee [https://gitee.com/help](https://gitee.com/help)
++6.  The most popular members  [https://gitee.com/gitee-stars/](https://gitee.com/gitee-stars/)
+diff --git a/compile_serving.sh b/compile_serving.sh
+new file mode 100644
+index 0000000..3520567
+--- /dev/null
++++ b/compile_serving.sh
+@@ -0,0 +1,121 @@
++#/bin/bash
++set -x
++
++TENSORFLOW_DIR=""
++ENABLE_GCC12=false
++ENABLE_KTFOP=false
++ENABLE_ANNC=false
++KTFOP_OPTIONS=""
++
++usage() {
++    echo "Usage: $0 --tensorflow_dir <path> [--features <feature1,feature2>]"
++    echo "Example: $0 --tensorflow_dir /path/to/tensorflow --features gcc12,annc"
++    exit 1
++}
++
++while [[ "$#" -gt 0 ]]; do
++    case "$1" in
++        --tensorflow_dir)
++            TENSORFLOW_DIR="$2"
++            shift 2
++            ;;
++        --features)
++            if [[ -z "$2" ]]; then
++                echo "Error: --features requires a value"
++                usage
++            fi
++            IFS=',' read -ra features_array <<< "$2"
++            for feature in "${features_array[@]}"; do
++                case "$feature" in
++                    "gcc12") ENABLE_GCC12=true ;;
++                    "ktfop") ENABLE_KTFOP=true ;;
++                    "annc") ENABLE_ANNC=true ;;
++                    *) 
++                        echo "Warning: Unknown feature '$feature', ignoring"
++                        ;;
++                esac
++            done
++            shift 2
++            ;;
++        -h|--help)
++            usage
++            ;;
++        *)
++            echo "Unknown parameter: $1"
++            usage
++            ;;
++    esac
++done
++
++if [[ -z "$TENSORFLOW_DIR" ]]; then
++    echo "Error: --tensorflow_dir is required"
++    usage
++fi
++
++if [[ ! -d "$TENSORFLOW_DIR" ]]; then
++    echo "Error: TensorFlow directory does not exist: $TENSORFLOW_DIR"
++    exit 1
++fi
++TF_SERVING_COMPILE_ROOT=$(pwd)
++DIST_DIR=$TF_SERVING_COMPILE_ROOT/download
++PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
++
++export PATH=$BAZEL_PATH:$PATH
++DIST_DIR="${DISTDIR:-$DIST_DIR}"
++BAZEL_COMPILE_CACHE=$TF_SERVING_COMPILE_ROOT/output
++
++if ! command -v bazel &> /dev/null; then
++    echo "Error: Bazel is not installed. Please install Bazel and try again."
++    exit 1
++fi
++
++bazel version
++
++FEATURES=$3
++IFS=',' read -ra features_array <<< "$FEATURES"
++for feature in "${features_array[@]}"; do
++    case "$feature" in
++        "gcc12")
++            ENABLE_GCC12=true
++            ;;
++        "ktfop")
++            ENABLE_KTFOP=true
++            ;;
++        "annc")
++            ENABLE_ANNC=true
++            ;;
++        *)
++            echo "未识别的特性: $feature"
++            ;;
++    esac
++done
++
++if [ "$ENABLE_GCC12" == true ]; then
++    PATH=/opt/openEuler/gcc-toolset-12/root/usr/bin/:$PATH
++    LD_LIBRARY_PATH=/opt/openEuler/gcc-toolset-12/root/usr/lib64
++    GCC_VERSION=$(gcc -dumpversion | cut -d. -f1)
++    if [[ "$GCC_VERSION" != "12" ]]; then
++        echo "Error: GCC version is $GCC_VERSION. Please install GCC 12. Consider use command: yum install gcc-toolset-12-gcc*"
++        exit 1
++    fi
++fi
++
++if [ "$ENABLE_KTFOP" == true ]; then
++    KTFOP_OPTIONS="--config=ktfop"
++fi
++
++if [ "$ENABLE_ANNC" == true ]; then
++    ANNC_OPTIONS="--config=fused_embedding --define tflite_with_xnnpack=false"
++fi
++
++gcc --version
++cd $TF_SERVING_COMPILE_ROOT && \
++PATH=$PATH \
++LD_LIBRARY_PATH=$LD_LIBRARY_PATH \
++bazel --output_user_root=$BAZEL_COMPILE_CACHE build -c opt --distdir=$DIST_DIR \
++--override_repository=org_tensorflow=$TENSORFLOW_DIR \
++--copt=-march=armv8.3-a+crc --copt=-O3 --copt=-fprefetch-loop-arrays \
++--copt=-Wno-error=maybe-uninitialized --copt=-Werror=stringop-overflow=0 \
++$KTFOP_OPTIONS \
++$ANNC_OPTIONS \
++tensorflow_serving/model_servers:tensorflow_model_server
+diff --git a/tensorflow_serving/model_servers/main.cc b/tensorflow_serving/model_servers/main.cc
+index 73df2d9..b0c028f 100644
+--- a/tensorflow_serving/model_servers/main.cc
++++ b/tensorflow_serving/model_servers/main.cc
+@@ -302,7 +302,14 @@ int main(int argc, char** argv) {
+                        "Whether to skip auto initializing TPU."),
+       tensorflow::Flag("enable_grpc_healthcheck_service",
+                        &options.enable_grpc_healthcheck_service,
+-                       "Enable the standard gRPC healthcheck service.")};
++                       "Enable the standard gRPC healthcheck service."),
++      tensorflow::Flag("batch_op_scheduling",
++                       &options.batch_op_scheduling,
++                       "Enable thread and schedule optimization for Kunpeng 920 CPU(default off)."),
++      tensorflow::Flag("task_affinity_isolation",
++                       &options.task_affinity_isolation,
++                       "Enable set thread affinity to isolate grpc and tensorflow thread."
++                       "('0': off, '1;0-79;75': order, '2;0-79': interval).")};
+ 
+   const auto& usage = tensorflow::Flags::Usage(argv[0], flag_list);
+   if (!tensorflow::Flags::Parse(&argc, argv, flag_list)) {
+diff --git a/tensorflow_serving/model_servers/server.cc b/tensorflow_serving/model_servers/server.cc
+index 0c9147c..053885e 100644
+--- a/tensorflow_serving/model_servers/server.cc
++++ b/tensorflow_serving/model_servers/server.cc
+@@ -176,6 +176,121 @@ void Server::PollFilesystemAndReloadConfig(const string& config_file_path) {
+   }
+ }
+ 
++struct ThreadAffinityArgument {
++  tensorflow::port::ThreadAffinity thread_affinity = tensorflow::port::ThreadAffinity::OFF;
++  int start_core = 0;
++  int end_core = 0;
++  int nums_tf_core = 0;
++};
++
++static int get_available_cpu_nums() {
++  cpu_set_t cs;
++  CPU_ZERO(&cs);
++  sched_getaffinity(0, sizeof(cs), &cs);
++
++  int count = 0;
++  for (int i = 0; i < CPU_SETSIZE; ++i) {
++    if (CPU_ISSET(i, &cs)) {
++      ++count;
++    }
++  }
++  return count;
++}
++
++tensorflow::Status ParseThreadAffinityConfig(tensorflow::string affinity_config,
++                                             ThreadAffinityArgument& args) {
++  std::stringstream ss(affinity_config);
++  std::string part;
++  std::vector<std::string> parts;
++
++  while (std::getline(ss, part, ';')) {
++    parts.push_back(part);
++  }
++
++  if (parts.size() < 1) {
++    return errors::InvalidArgument("Invalid input format. Expected at least affinity mode.");
++  }
++
++  int mode = std::stoi(parts[0]);
++  if (mode < 0 || mode > 2) {
++    return errors::InvalidArgument("Invalid input format. Affinity mode only support 0/1/2.");
++  }
++  args.thread_affinity = static_cast<tensorflow::port::ThreadAffinity>(mode);
++  if (args.thread_affinity == tensorflow::port::ThreadAffinity::OFF) {
++    return tensorflow::OkStatus();
++  }
++
++  if (parts.size() < 2) {
++    return errors::InvalidArgument("Invalid input format. Expected range when affinity mode is 1/2.");
++  }
++  std::string range = parts[1];
++  size_t dash_pos = range.find('-');
++  if (dash_pos == std::string::npos) {
++    return errors::InvalidArgument("Invalid input format. Expected n-m.");
++  }
++  args.start_core = std::stoi(range.substr(0, dash_pos));
++  args.end_core = std::stoi(range.substr(dash_pos + 1));
++
++  if (args.start_core > args.end_core) {
++    return errors::InvalidArgument("Invalid input format. Expected n-m, n<=m.");
++  }
++
++  int total_cores = args.end_core - args.start_core + 1;
++  if (get_available_cpu_nums() < total_cores) {
++    return errors::InvalidArgument("Invalid input format. available cpu num less than total cores.");
++  }
++  if (args.thread_affinity == tensorflow::port::ThreadAffinity::INTERVAL) {
++    return tensorflow::OkStatus();
++  }
++
++  if (parts.size() < 3) {
++    return errors::InvalidArgument("Invalid input format. Expected tf cores num when affinity mode is 1.");
++  }
++  args.nums_tf_core = std::stoi(parts[2]);
++  if (args.nums_tf_core > (args.end_core - args.start_core + 1)) {
++    return errors::InvalidArgument("Invalid input format. Expected k < total cores.");
++  }
++  return tensorflow::OkStatus();
++}
++
++void SetThreadAffinityBeforeServerCreate(ThreadAffinityArgument args) {
++  cpu_set_t cpuset;
++  CPU_ZERO(&cpuset);
++  if (args.thread_affinity == tensorflow::port::ThreadAffinity::INTERVAL) {
++    for (int cpu = args.start_core; cpu <= args.end_core; cpu++) {
++      if (cpu % 2 == 0) {
++        CPU_SET(cpu, &cpuset);
++      }
++    }
++  } else if (args.thread_affinity == tensorflow::port::ThreadAffinity::ORDER) {
++    for (int cpu = args.start_core; cpu < args.start_core + args.nums_tf_core; cpu++) {
++      CPU_SET(cpu, &cpuset);
++    }
++  }
++  if (pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset) != 0) {
++    LOG(WARNING) << std::this_thread::get_id() << " set affinity failed";
++  }
++}
++
++void SetThreadAffinityAfterServerCreate(ThreadAffinityArgument args) {
++  cpu_set_t cpuset;
++  CPU_ZERO(&cpuset);
++  if (args.thread_affinity == tensorflow::port::ThreadAffinity::INTERVAL) {
++    for (int cpu = args.start_core; cpu <= args.end_core; cpu++) {
++      if (cpu % 2 == 1) {
++        CPU_SET(cpu, &cpuset);
++      }
++    }
++  } else if (args.thread_affinity == tensorflow::port::ThreadAffinity::ORDER) {
++    for (int cpu = args.start_core + args.nums_tf_core; cpu <= args.end_core; cpu++) {
++      CPU_SET(cpu, &cpuset);
++    }
++  }
++  if (pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset) != 0) {
++    LOG(WARNING) << std::this_thread::get_id() << " set affinity failed";
++  }
++}
++
+ Status Server::BuildAndStart(const Options& server_options) {
+   if (server_options.grpc_port == 0 &&
+       server_options.grpc_socket_path.empty()) {
+@@ -217,6 +332,8 @@ Status Server::BuildAndStart(const Options& server_options) {
+   auto* tf_serving_registry =
+       init::TensorflowServingFunctionRegistration::GetRegistry();
+ 
++  ThreadAffinityArgument affinity_args;
++
+   if (server_options.platform_config_file.empty()) {
+     SessionBundleConfig session_bundle_config;
+     // Batching config
+@@ -275,6 +392,10 @@ Status Server::BuildAndStart(const Options& server_options) {
+             server_options.tensorflow_session_parallelism);
+     }
+ 
++    TF_RETURN_IF_ERROR(ParseThreadAffinityConfig(server_options.task_affinity_isolation, affinity_args));
++    session_bundle_config.mutable_session_config()
++    ->set_use_batch_op_scheduling(server_options.batch_op_scheduling);
++
+     const std::vector<string> tags =
+         tensorflow::str_util::Split(server_options.saved_model_tags, ",");
+     for (const string& tag : tags) {
+@@ -322,7 +443,13 @@ Status Server::BuildAndStart(const Options& server_options) {
+       server_options.force_allow_any_version_labels_for_unavailable_models;
+   options.enable_cors_support = server_options.enable_cors_support;
+ 
++  if (affinity_args.thread_affinity) {
++    SetThreadAffinityBeforeServerCreate(affinity_args);
++  }
+   TF_RETURN_IF_ERROR(ServerCore::Create(std::move(options), &server_core_));
++  if (affinity_args.thread_affinity) {
++    SetThreadAffinityAfterServerCreate(affinity_args);
++  }
+ 
+   // Model config polling thread must be started after the call to
+   // ServerCore::Create() to prevent config reload being done concurrently from
+diff --git a/tensorflow_serving/model_servers/server.h b/tensorflow_serving/model_servers/server.h
+index babd34e..3df8bec 100644
+--- a/tensorflow_serving/model_servers/server.h
++++ b/tensorflow_serving/model_servers/server.h
+@@ -105,6 +105,8 @@ class Server {
+     bool skip_initialize_tpu = false;
+     // Misc GRPC features
+     bool enable_grpc_healthcheck_service = false;
++    bool batch_op_scheduling = false;
++    tensorflow::string task_affinity_isolation = "0";
+     Options();
+   };
+ 
+diff --git a/tensorflow_serving/session_bundle/testdata/half_plus_two/00000123/export-00000-of-00001 b/tensorflow_serving/session_bundle/testdata/half_plus_two/00000123/export-00000-of-00001
+old mode 100755
+new mode 100644
+diff --git a/tensorflow_serving/session_bundle/testdata/half_plus_two/00000123/export.meta b/tensorflow_serving/session_bundle/testdata/half_plus_two/00000123/export.meta
+old mode 100755
+new mode 100644
+diff --git a/tensorflow_serving/tools/docker/setup.sources.sh b/tensorflow_serving/tools/docker/setup.sources.sh
+old mode 100755
+new mode 100644
+diff --git a/tensorflow_serving/tools/docker/tests/docker_test_lib.sh b/tensorflow_serving/tools/docker/tests/docker_test_lib.sh
+old mode 100755
+new mode 100644
+diff --git a/tensorflow_serving/tools/docker/tests/dockerfile_devel_gpu_test.sh b/tensorflow_serving/tools/docker/tests/dockerfile_devel_gpu_test.sh
+old mode 100755
+new mode 100644
+diff --git a/tensorflow_serving/tools/docker/tests/dockerfile_devel_gpu_trt_test.sh b/tensorflow_serving/tools/docker/tests/dockerfile_devel_gpu_trt_test.sh
+old mode 100755
+new mode 100644
+diff --git a/tensorflow_serving/tools/docker/tests/dockerfile_devel_mkl_test.sh b/tensorflow_serving/tools/docker/tests/dockerfile_devel_mkl_test.sh
+old mode 100755
+new mode 100644
+diff --git a/tensorflow_serving/tools/docker/tests/dockerfile_devel_test.sh b/tensorflow_serving/tools/docker/tests/dockerfile_devel_test.sh
+old mode 100755
+new mode 100644
+diff --git a/tensorflow_serving/tools/docker/tests/dockerfile_gpu_test.sh b/tensorflow_serving/tools/docker/tests/dockerfile_gpu_test.sh
+old mode 100755
+new mode 100644
+diff --git a/tensorflow_serving/tools/docker/tests/dockerfile_gpu_trt_test.sh b/tensorflow_serving/tools/docker/tests/dockerfile_gpu_trt_test.sh
+old mode 100755
+new mode 100644
+diff --git a/tensorflow_serving/tools/docker/tests/dockerfile_mkl_test.sh b/tensorflow_serving/tools/docker/tests/dockerfile_mkl_test.sh
+old mode 100755
+new mode 100644
+diff --git a/tensorflow_serving/tools/docker/tests/dockerfile_test.sh b/tensorflow_serving/tools/docker/tests/dockerfile_test.sh
+old mode 100755
+new mode 100644
+diff --git a/tensorflow_serving/tools/pip_package/build_pip_package.sh b/tensorflow_serving/tools/pip_package/build_pip_package.sh
+old mode 100755
+new mode 100644
+diff --git a/tensorflow_serving/workspace.bzl b/tensorflow_serving/workspace.bzl
+index de1203a..bee5285 100644
+--- a/tensorflow_serving/workspace.bzl
++++ b/tensorflow_serving/workspace.bzl
+@@ -36,9 +36,9 @@ def tf_serving_workspace():
+     # ===== libevent (libevent.org) dependency =====
+     http_archive(
+         name = "com_github_libevent_libevent",
+-        url = "https://github.com/libevent/libevent/archive/release-2.1.8-stable.zip",
+-        sha256 = "70158101eab7ed44fd9cc34e7f247b3cae91a8e4490745d9d6eb7edc184e4d96",
+-        strip_prefix = "libevent-release-2.1.8-stable",
++        url = "https://github.com/libevent/libevent/archive/release-2.1.12-stable.zip",
++        sha256 = "8836ad722ab211de41cb82fe098911986604f6286f67d10dfb2b6787bf418f49",
++        strip_prefix = "libevent-release-2.1.12-stable",
+         build_file = "@//third_party/libevent:BUILD",
+     )
+ 
+diff --git a/tools/run_in_docker.sh b/tools/run_in_docker.sh
+old mode 100755
+new mode 100644
