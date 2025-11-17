@@ -72,10 +72,10 @@ index 0000000..7f1aa5a
 +6.  The most popular members  [https://gitee.com/gitee-stars/](https://gitee.com/gitee-stars/)
 diff --git a/compile_serving.sh b/compile_serving.sh
 new file mode 100644
-index 0000000..3520567
+index 0000000..f2f1b07
 --- /dev/null
 +++ b/compile_serving.sh
-@@ -0,0 +1,121 @@
+@@ -0,0 +1,118 @@
 +#/bin/bash
 +set -x
 +
@@ -83,7 +83,9 @@ index 0000000..3520567
 +ENABLE_GCC12=false
 +ENABLE_KTFOP=false
 +ENABLE_ANNC=false
++ENABLE_KDNN=false
 +KTFOP_OPTIONS=""
++KDNN_OPTIONS=""
 +
 +usage() {
 +    echo "Usage: $0 --tensorflow_dir <path> [--features <feature1,feature2>]"
@@ -105,9 +107,18 @@ index 0000000..3520567
 +            IFS=',' read -ra features_array <<< "$2"
 +            for feature in "${features_array[@]}"; do
 +                case "$feature" in
-+                    "gcc12") ENABLE_GCC12=true ;;
-+                    "ktfop") ENABLE_KTFOP=true ;;
-+                    "annc") ENABLE_ANNC=true ;;
++                    "gcc12")
++                        ENABLE_GCC12=true
++                        ;;
++                    "ktfop") 
++                        ENABLE_KTFOP=true
++                        ;;
++                    "annc")
++                        ENABLE_ANNC=true
++                        ;;
++                    "kdnn")
++                        ENABLE_KDNN=true
++                        ;;
 +                    *) 
 +                        echo "Warning: Unknown feature '$feature', ignoring"
 +                        ;;
@@ -149,25 +160,6 @@ index 0000000..3520567
 +
 +bazel version
 +
-+FEATURES=$3
-+IFS=',' read -ra features_array <<< "$FEATURES"
-+for feature in "${features_array[@]}"; do
-+    case "$feature" in
-+        "gcc12")
-+            ENABLE_GCC12=true
-+            ;;
-+        "ktfop")
-+            ENABLE_KTFOP=true
-+            ;;
-+        "annc")
-+            ENABLE_ANNC=true
-+            ;;
-+        *)
-+            echo "未识别的特性: $feature"
-+            ;;
-+    esac
-+done
-+
 +if [ "$ENABLE_GCC12" == true ]; then
 +    PATH=/opt/openEuler/gcc-toolset-12/root/usr/bin/:$PATH
 +    LD_LIBRARY_PATH=/opt/openEuler/gcc-toolset-12/root/usr/lib64
@@ -186,6 +178,10 @@ index 0000000..3520567
 +    ANNC_OPTIONS="--config=fused_embedding --define tflite_with_xnnpack=false"
 +fi
 +
++if [ "$ENABLE_KDNN" == true ]; then
++    KDNN_OPTIONS="--define enable_kdnn=true"
++fi
++
 +gcc --version
 +cd $TF_SERVING_COMPILE_ROOT && \
 +PATH=$PATH \
@@ -195,6 +191,7 @@ index 0000000..3520567
 +--copt=-march=armv8.3-a+crc --copt=-O3 --copt=-fprefetch-loop-arrays \
 +--copt=-Wno-error=maybe-uninitialized --copt=-Werror=stringop-overflow=0 \
 +$KTFOP_OPTIONS \
++$KDNN_OPTIONS \
 +$ANNC_OPTIONS \
 +tensorflow_serving/model_servers:tensorflow_model_server
 diff --git a/tensorflow_serving/model_servers/main.cc b/tensorflow_serving/model_servers/main.cc
