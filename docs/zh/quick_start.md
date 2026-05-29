@@ -28,7 +28,7 @@
    bazel build --config=opt //tensorflow/tools/pip_package:build_pip_package
    ```
 
-5.  编译libtensorflow\_cc.so。
+5. 编译libtensorflow\_cc.so。
 
    ```bash
    bazel build --config=opt //tensorflow/libtensorflow_cc.so 
