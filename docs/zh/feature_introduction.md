@@ -18,7 +18,6 @@ ANNC图编译优化特性通过编译选项和代码补丁的方式接入TensorF
 >OpenXLA是一个由高性能、可移植、可扩展的机器学习基础架构组件组成的开放生态系统。
 >XLA是一种开源机器学习编译器。XLA编译器从TensorFlow框架获取模型，并优化模型以便在不同硬件平台（包括GPU、CPU和机器学习加速器）上实现高性能执行。
 
-
 ### 软件架构
 
 TF Serving软件架构如[**图 1** TF Serving软件架构](#TF-Serving软件架构)所示，组件功能如[**表 1** TF Serving软件组件功能介绍](#TF-Serving软件组件功能介绍)所示。
@@ -126,7 +125,6 @@ TensorFlow Serving线程调度优化特性以Patch的方式实现，并合入了
 
 >![](public_sys-resources/icon-note.gif) **说明：** 
 >XLA（Accelerated Linear Algebra）是TensorFlow中的优化编译器，用于加速线性代数操作的执行。XLA通过将TensorFlow的计算图转换成高效的、低级别的硬件指令，从而提升计算性能。
-
 
 ### 软件架构
 
